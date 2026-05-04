@@ -37,6 +37,7 @@ class _LeaveAttendanceScreenState extends State<LeaveAttendanceScreen> {
   String? _selectedForRemoveRequestId;
   bool _isRemoveMode = false;
   bool _isOpeningAllRequests = false;
+  bool _isLoading = true;
 
   final DateFormat _dateFormatter = DateFormat('dd MMM yyyy');
   final RealtimeDataController _realtimeDataController =
@@ -77,6 +78,7 @@ class _LeaveAttendanceScreenState extends State<LeaveAttendanceScreen> {
 
       _history = _leaveRecords.toList()
         ..sort((a, b) => b.startDate.compareTo(a.startDate));
+      _isLoading = false;
     });
   }
 
@@ -229,7 +231,9 @@ class _LeaveAttendanceScreenState extends State<LeaveAttendanceScreen> {
 
           // SCROLLABLE LIST SECTION
           Expanded(
-            child: _history.isEmpty
+            child: _isLoading
+                ? _buildLoadingState(context)
+                : _history.isEmpty
                 ? _buildEmptyState(context)
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -414,6 +418,16 @@ class _LeaveAttendanceScreenState extends State<LeaveAttendanceScreen> {
     return DataEmptyState(
       imageAsset: AppImg.emptyState,
       message: AppStrings.tr('no_records'),
+    );
+  }
+
+  Widget _buildLoadingState(BuildContext context) {
+    return Center(
+      child: CircularProgressIndicator(
+        valueColor: AlwaysStoppedAnimation<Color>(
+          Theme.of(context).colorScheme.primary,
+        ),
+      ),
     );
   }
 

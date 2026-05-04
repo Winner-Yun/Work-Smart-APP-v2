@@ -31,6 +31,7 @@ class _LeaveAllRequestsScreenState extends State<LeaveAllRequestsScreen> {
   String? _selectedForRemoveRequestId;
   bool _isRemoveMode = false;
   bool _hasDeletedLeaveRequest = false;
+  bool _isLoading = true;
   LeaveSortBy _sortBy = LeaveSortBy.dateNewest;
   final RealtimeDataController _realtimeDataController =
       RealtimeDataController();
@@ -71,6 +72,7 @@ class _LeaveAllRequestsScreenState extends State<LeaveAllRequestsScreen> {
         ..sort((a, b) => b.startDate.compareTo(a.startDate));
 
       _applyFilter();
+      _isLoading = false;
     });
   }
 
@@ -230,7 +232,9 @@ class _LeaveAllRequestsScreenState extends State<LeaveAllRequestsScreen> {
           children: [
             _buildFilterAndSort(context),
             Expanded(
-              child: _filteredHistory.isEmpty
+              child: _isLoading
+                  ? _buildLoadingState(context)
+                  : _filteredHistory.isEmpty
                   ? _buildEmptyState(context)
                         .animate(key: const ValueKey('leave-empty-state'))
                         .fadeIn(duration: 260.ms, curve: Curves.easeOut)
@@ -438,6 +442,16 @@ class _LeaveAllRequestsScreenState extends State<LeaveAllRequestsScreen> {
     return DataEmptyState(
       imageAsset: AppImg.emptyState,
       message: AppStrings.tr('no_records'),
+    );
+  }
+
+  Widget _buildLoadingState(BuildContext context) {
+    return Center(
+      child: CircularProgressIndicator(
+        valueColor: AlwaysStoppedAnimation<Color>(
+          Theme.of(context).colorScheme.primary,
+        ),
+      ),
     );
   }
 

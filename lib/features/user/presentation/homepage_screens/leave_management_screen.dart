@@ -44,6 +44,7 @@ class _LeaveDetailScreenState extends State<LeaveDetailScreen>
 
   String? _selectedForRemoveRequestId;
   bool _isOpeningAllRequests = false;
+  bool _isLoading = true;
 
   final RealtimeDataController _realtimeDataController =
       RealtimeDataController();
@@ -131,6 +132,7 @@ class _LeaveDetailScreenState extends State<LeaveDetailScreen>
         setState(() {
           _currentUser = UserProfile.fromJson(defaultUserRecord);
           _applyUserData();
+          _isLoading = false;
         });
         return;
       }
@@ -148,6 +150,7 @@ class _LeaveDetailScreenState extends State<LeaveDetailScreen>
       setState(() {
         _currentUser = UserProfile.fromJson(userData);
         _applyUserData();
+        _isLoading = false;
       });
     } catch (e, stack) {
       debugPrintStack(stackTrace: stack);
@@ -160,6 +163,7 @@ class _LeaveDetailScreenState extends State<LeaveDetailScreen>
         _annualRatio = 0;
         _sickRatio = 0;
         _history = [];
+        _isLoading = false;
         _updateAnimations();
       });
     }
@@ -272,7 +276,9 @@ class _LeaveDetailScreenState extends State<LeaveDetailScreen>
             ),
           ),
           Expanded(
-            child: _history.isEmpty
+            child: _isLoading
+                ? _buildLoadingState(context)
+                : _history.isEmpty
                 ? _buildEmptyState(context)
                 : ListView.builder(
                     physics: const BouncingScrollPhysics(),
@@ -601,6 +607,16 @@ class _LeaveDetailScreenState extends State<LeaveDetailScreen>
     return DataEmptyState(
       imageAsset: AppImg.emptyState,
       message: AppStrings.tr('no_records'),
+    );
+  }
+
+  Widget _buildLoadingState(BuildContext context) {
+    return Center(
+      child: CircularProgressIndicator(
+        valueColor: AlwaysStoppedAnimation<Color>(
+          Theme.of(context).colorScheme.primary,
+        ),
+      ),
     );
   }
 
