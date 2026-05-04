@@ -6,11 +6,18 @@ import 'package:flutter_worksmart_app/features/user/logic/leave_request_logic.da
 import 'package:flutter_worksmart_app/shared/model/activity_models/leave_record.dart';
 import 'package:intl/intl.dart';
 
-class LeaveDetailViewScreen extends StatelessWidget {
+class LeaveDetailViewScreen extends StatefulWidget {
   final LeaveRecord leave;
   final String? userId;
 
   const LeaveDetailViewScreen({super.key, required this.leave, this.userId});
+
+  @override
+  State<LeaveDetailViewScreen> createState() => _LeaveDetailViewScreenState();
+}
+
+class _LeaveDetailViewScreenState extends State<LeaveDetailViewScreen> {
+  bool _isDeleting = false;
 
   @override
   Widget build(BuildContext context) {
@@ -19,25 +26,61 @@ class LeaveDetailViewScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: _buildAppBar(context),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildStatusHeader(context).animate().fadeIn(delay: 100.ms),
-            const SizedBox(height: 24),
-            _buildDateRangeCard(context).animate().fadeIn(delay: 150.ms),
-            const SizedBox(height: 20),
-            _buildDetailsGrid(context).animate().fadeIn(delay: 200.ms),
-            const SizedBox(height: 20),
-            _buildReasonSection(context).animate().fadeIn(delay: 250.ms),
-            if (shouldShowAttachmentSection) ...[
-              const SizedBox(height: 20),
-              _buildAttachmentSection(context).animate().fadeIn(delay: 300.ms),
-            ],
-            const SizedBox(height: 30),
-          ],
-        ),
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildStatusHeader(context).animate().fadeIn(delay: 100.ms),
+                const SizedBox(height: 24),
+                _buildDateRangeCard(context).animate().fadeIn(delay: 150.ms),
+                const SizedBox(height: 20),
+                _buildDetailsGrid(context).animate().fadeIn(delay: 200.ms),
+                const SizedBox(height: 20),
+                _buildReasonSection(context).animate().fadeIn(delay: 250.ms),
+                if (shouldShowAttachmentSection) ...[
+                  const SizedBox(height: 20),
+                  _buildAttachmentSection(
+                    context,
+                  ).animate().fadeIn(delay: 300.ms),
+                ],
+                const SizedBox(height: 30),
+              ],
+            ),
+          ),
+          if (_isDeleting)
+            Positioned.fill(
+              child: AbsorbPointer(
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 18,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).cardTheme.color,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            height: 28,
+                            width: 28,
+                            child: CircularProgressIndicator(strokeWidth: 2.5),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -64,10 +107,10 @@ class LeaveDetailViewScreen extends StatelessWidget {
         ),
       ),
       actions: [
-        if (LeaveRequestLogic.canRemoveStatus(leave.status))
+        if (LeaveRequestLogic.canRemoveStatus(widget.leave.status))
           IconButton(
             icon: const Icon(Icons.delete_outline, color: Colors.red),
-            onPressed: () => _confirmAndDelete(context),
+            onPressed: _isDeleting ? null : () => _confirmAndDelete(context),
           ),
       ],
       centerTitle: true,
@@ -75,11 +118,24 @@ class LeaveDetailViewScreen extends StatelessWidget {
   }
 
   Future<void> _confirmAndDelete(BuildContext context) async {
+    if (_isDeleting) return;
+
+    setState(() {
+      _isDeleting = true;
+    });
+
     final bool removed = await LeaveRequestLogic.confirmAndDeleteLeave(
       context,
-      record: leave,
-      userId: userId,
+      record: widget.leave,
+      userId: widget.userId,
     );
+
+    if (!mounted) return;
+
+    setState(() {
+      _isDeleting = false;
+    });
+
     if (!removed) return;
     if (context.mounted) {
       Navigator.pop(context, true);
@@ -87,9 +143,9 @@ class LeaveDetailViewScreen extends StatelessWidget {
   }
 
   Widget _buildStatusHeader(BuildContext context) {
-    final statusColor = _getStatusColor(leave.status);
-    final statusKey = _getStatusKey(leave.status);
-    final typeIcon = _getLeaveTypeIcon(leave.type);
+    final statusColor = _getStatusColor(widget.leave.status);
+    final statusKey = _getStatusKey(widget.leave.status);
+    final typeIcon = _getLeaveTypeIcon(widget.leave.type);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -121,7 +177,7 @@ class LeaveDetailViewScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  AppStrings.tr(leave.type),
+                  AppStrings.tr(widget.leave.type),
                   style: TextStyle(
                     color: Theme.of(context).textTheme.bodyLarge?.color,
                     fontWeight: FontWeight.w700,
@@ -157,9 +213,9 @@ class LeaveDetailViewScreen extends StatelessWidget {
 
   Widget _buildDateRangeCard(BuildContext context) {
     final dateFormatter = DateFormat('dd MMM yyyy');
-    final startLabel = dateFormatter.format(leave.startDate);
-    final endLabel = dateFormatter.format(leave.endDate);
-    final durationDays = leave.durationInDays;
+    final startLabel = dateFormatter.format(widget.leave.startDate);
+    final endLabel = dateFormatter.format(widget.leave.endDate);
+    final durationDays = widget.leave.durationInDays;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -297,7 +353,7 @@ class LeaveDetailViewScreen extends StatelessWidget {
       context,
       Icons.check_circle,
       AppStrings.tr('submitted_date'),
-      dateFormatter.format(leave.startDate),
+      dateFormatter.format(widget.leave.startDate),
     );
   }
 
@@ -389,7 +445,7 @@ class LeaveDetailViewScreen extends StatelessWidget {
             ),
           ),
           child: Text(
-            leave.reason,
+            widget.leave.reason,
             style: TextStyle(
               color: Theme.of(context).textTheme.bodyLarge?.color,
               fontSize: 13,
@@ -403,7 +459,8 @@ class LeaveDetailViewScreen extends StatelessWidget {
 
   Widget _buildAttachmentSection(BuildContext context) {
     final bool hasAttachment =
-        leave.attachmentUrl != null && leave.attachmentUrl!.isNotEmpty;
+        widget.leave.attachmentUrl != null &&
+        widget.leave.attachmentUrl!.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -427,73 +484,274 @@ class LeaveDetailViewScreen extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Theme.of(
-              context,
-            ).colorScheme.primary.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Theme.of(
-                context,
-              ).colorScheme.primary.withValues(alpha: 0.2),
-              width: 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.insert_drive_file,
-                color: Theme.of(context).colorScheme.primary,
-                size: 22,
+        if (hasAttachment)
+          GestureDetector(
+            onTap: () => _showImageViewer(context, widget.leave.attachmentUrl!),
+            child: Container(
+              width: double.infinity,
+              height: 140,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Stack(
+                  fit: StackFit.expand,
                   children: [
-                    Text(
-                      AppStrings.tr('medical_report'),
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
+                    Image.network(
+                      widget.leave.attachmentUrl!,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.primary.withValues(alpha: 0.1),
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded /
+                                        loadingProgress.expectedTotalBytes!
+                                  : null,
+                            ),
+                          ),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.primary.withValues(alpha: 0.1),
+                          child: Center(
+                            child: Icon(
+                              Icons.image_not_supported_outlined,
+                              size: 40,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    // Overlay with gradient
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.4),
+                            Colors.transparent,
+                          ],
+                        ),
                       ),
                     ),
-                    Text(
-                      hasAttachment
-                          ? leave.attachmentUrl!
-                          : AppStrings.tr('no_attachments'),
-                      style: const TextStyle(
-                        color: AppColors.textGrey,
-                        fontSize: 11,
+                    // Bottom info
+                    Positioned(
+                      bottom: 12,
+                      left: 12,
+                      right: 12,
+                      child: Row(
+                        children: [
+                          Icon(Icons.image, color: Colors.white, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            AppStrings.tr('medical_report'),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const Spacer(),
+                          Icon(Icons.zoom_in, color: Colors.white, size: 18),
+                        ],
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
-              Icon(
-                Icons.download,
-                color: Theme.of(context).colorScheme.primary,
-                size: 18,
+            ),
+          )
+        else
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.2),
+                width: 1.5,
               ),
-            ],
+            ),
+            child: Center(
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.image_not_supported_outlined,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.4),
+                    size: 32,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    AppStrings.tr('no_attachments'),
+                    style: TextStyle(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.6),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
       ],
+    );
+  }
+
+  void _showImageViewer(BuildContext context, String imageUrl) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close image',
+      barrierColor: Colors.black.withValues(alpha: 0.8),
+      transitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (context, anim1, anim2) => const SizedBox(),
+      transitionBuilder: (context, anim1, anim2, child) {
+        return Transform.scale(
+          scale: anim1.value,
+          child: Opacity(
+            opacity: anim1.value,
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Stack(
+                alignment: Alignment.topRight,
+                children: [
+                  Center(
+                    child: GestureDetector(
+                      onTap: () {}, // Prevent closing when tapping image
+                      child: Container(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.9,
+                          maxWidth: MediaQuery.of(context).size.width * 0.95,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.3),
+                              blurRadius: 20,
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Image.network(
+                            imageUrl,
+                            fit: BoxFit.contain,
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return Container(
+                                color: Theme.of(context).cardTheme.color,
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    value:
+                                        loadingProgress.expectedTotalBytes !=
+                                            null
+                                        ? loadingProgress
+                                                  .cumulativeBytesLoaded /
+                                              loadingProgress
+                                                  .expectedTotalBytes!
+                                        : null,
+                                  ),
+                                ),
+                              );
+                            },
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: Theme.of(context).cardTheme.color,
+                                child: Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.image_not_supported_outlined,
+                                        size: 48,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary
+                                            .withValues(alpha: 0.5),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        AppStrings.tr('failed_to_load_image'),
+                                        style: TextStyle(
+                                          color: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall?.color,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
   bool _shouldShowAttachmentSection() {
     final bool hasAttachment =
-        leave.attachmentUrl != null && leave.attachmentUrl!.isNotEmpty;
+        widget.leave.attachmentUrl != null &&
+        widget.leave.attachmentUrl!.isNotEmpty;
     if (!hasAttachment) return false;
 
-    return leave.type == 'sick_leave';
+    return widget.leave.type == 'sick_leave';
   }
 
   String _getStatusKey(String status) {

@@ -5,6 +5,7 @@ import 'package:flutter_worksmart_app/core/constants/app_strings.dart';
 import 'package:flutter_worksmart_app/core/constants/appcolor.dart';
 import 'package:flutter_worksmart_app/features/user/logic/homepage_logic.dart';
 import 'package:flutter_worksmart_app/shared/widget/common/app_profile_avatar.dart';
+import 'package:flutter_worksmart_app/shared/widget/common/home_page_skeleton_loading.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class HomePageScreen extends StatefulWidget {
@@ -27,21 +28,7 @@ class _HomePageScreenState extends HomePageLogic {
   @override
   Widget build(BuildContext context) {
     if (isInitialDataLoading) {
-      return SafeArea(
-        child: Scaffold(
-          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-          body: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
+      return const HomePageSkeletonLoading();
     }
 
     final bool isFaceApproved = currentFaceStatus == 'approved';

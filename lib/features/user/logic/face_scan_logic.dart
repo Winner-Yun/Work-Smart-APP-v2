@@ -508,7 +508,7 @@ abstract class FaceScanLogic extends State<FaceScanScreen>
             ),
           ),
           content: Text(
-            '${AppStrings.tr('face_scan_success_desc')}\nSimilarity: ${verification.similarity.toStringAsFixed(2)}',
+            AppStrings.tr('face_scan_success_desc'),
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium,
           ),

@@ -13,6 +13,7 @@ import 'package:flutter_worksmart_app/features/user/auth/presentation/change_pas
 import 'package:flutter_worksmart_app/features/user/presentation/profile&setting_screens/setting_screen.dart';
 import 'package:flutter_worksmart_app/shared/model/user_model/user_profile.dart';
 import 'package:flutter_worksmart_app/shared/widget/common/app_profile_avatar.dart';
+import 'package:flutter_worksmart_app/shared/widget/common/profile_skeleton_loading.dart';
 import 'package:image_picker/image_picker.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -32,6 +33,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final CloudinaryProfileImageService _cloudinaryProfileImageService =
       CloudinaryProfileImageService();
   bool _isUploadingProfileImage = false;
+  bool _isLoading = true;
   String? _resolvedOfficeName;
 
   @override
@@ -96,6 +98,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
 
     await _loadOfficeName();
+
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _loadOfficeName() async {
@@ -179,8 +185,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       setState(() {
         _image = null;
-        _loadData();
+        _isLoading = true;
       });
+      _loadData();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -272,39 +279,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: _buildAppBar(context),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          children: [
-            const SizedBox(height: 20),
-            _buildAvatarSection(),
-            const SizedBox(height: 15),
-            Text(
-              _currentUser.displayName,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).textTheme.bodyLarge?.color,
+      body: _isLoading
+          ? const ProfileSkeletonLoading()
+          : SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                children: [
+                  const SizedBox(height: 20),
+                  _buildAvatarSection(),
+                  const SizedBox(height: 15),
+                  Text(
+                    _currentUser.displayName,
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).textTheme.bodyLarge?.color,
+                    ),
+                  ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.3, end: 0),
+                  Text(
+                    _currentUser.roleTitle,
+                    style: const TextStyle(color: AppColors.textGrey),
+                  ).animate().fadeIn(delay: 300.ms),
+                  const SizedBox(height: 30),
+                  _buildInfoCard(context),
+                  const SizedBox(height: 20),
+                  _buildActionTile(
+                    Icons.lock_outline,
+                    AppStrings.tr('change_password_action'),
+                    context,
+                  ),
+                  const SizedBox(height: 30),
+                  _buildLogoutButton(),
+                  const SizedBox(height: 40),
+                ],
               ),
-            ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.3, end: 0),
-            Text(
-              _currentUser.roleTitle,
-              style: const TextStyle(color: AppColors.textGrey),
-            ).animate().fadeIn(delay: 300.ms),
-            const SizedBox(height: 30),
-            _buildInfoCard(context),
-            const SizedBox(height: 20),
-            _buildActionTile(
-              Icons.lock_outline,
-              AppStrings.tr('change_password_action'),
-              context,
             ),
-            const SizedBox(height: 30),
-            _buildLogoutButton(),
-            const SizedBox(height: 40),
-          ],
-        ),
-      ),
     );
   }
 
@@ -333,7 +342,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               );
               if (!mounted) return;
               if (shouldRefresh == true) {
-                setState(() {});
+                setState(() => _isLoading = true);
+                _loadData();
               }
             },
             icon: const Icon(Icons.settings_outlined, color: Colors.white),

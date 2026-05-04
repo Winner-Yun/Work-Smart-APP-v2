@@ -12,6 +12,7 @@ import 'package:flutter_worksmart_app/features/user/presentation/attendence_scre
 import 'package:flutter_worksmart_app/features/user/presentation/attendence_screens/leave_detail_view_screen.dart';
 import 'package:flutter_worksmart_app/shared/model/activity_models/leave_record.dart';
 import 'package:flutter_worksmart_app/shared/model/user_model/user_profile.dart';
+import 'package:flutter_worksmart_app/shared/widget/common/leave_management_skeleton_loading.dart';
 import 'package:flutter_worksmart_app/shared/widget/user/data_empty_state.dart';
 import 'package:intl/intl.dart';
 
@@ -277,7 +278,7 @@ class _LeaveDetailScreenState extends State<LeaveDetailScreen>
           ),
           Expanded(
             child: _isLoading
-                ? _buildLoadingState(context)
+                ? const LeaveManagementSkeletonLoading()
                 : _history.isEmpty
                 ? _buildEmptyState(context)
                 : ListView.builder(
@@ -610,16 +611,6 @@ class _LeaveDetailScreenState extends State<LeaveDetailScreen>
     );
   }
 
-  Widget _buildLoadingState(BuildContext context) {
-    return Center(
-      child: CircularProgressIndicator(
-        valueColor: AlwaysStoppedAnimation<Color>(
-          Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
-  }
-
   Widget _buildSectionHeader(String title, String action) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -654,6 +645,8 @@ class _LeaveDetailScreenState extends State<LeaveDetailScreen>
   }
 
   Widget _buildBottomAction() {
+    final bool canRequestSickLeave = _getActiveSickRequestCount() < 1;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -670,22 +663,30 @@ class _LeaveDetailScreenState extends State<LeaveDetailScreen>
         children: [
           Expanded(
             child: OutlinedButton(
-              onPressed: () => _openLeaveRequest(AppRoute.sickleaveScreen),
+              onPressed: canRequestSickLeave
+                  ? () => _openLeaveRequest(AppRoute.sickleaveScreen)
+                  : null,
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(0, 55),
-                side: BorderSide(color: Theme.of(context).colorScheme.primary),
+                side: BorderSide(
+                  color: canRequestSickLeave
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.grey.withOpacity(0.3),
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(15),
                 ),
               ),
               child: Text(
                 AppStrings.tr('request_sick_leave'),
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: canRequestSickLeave
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.grey,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
@@ -717,6 +718,22 @@ class _LeaveDetailScreenState extends State<LeaveDetailScreen>
   }
 
   Future<void> _openLeaveRequest(String routeName) async {
+    if (routeName == AppRoute.sickleaveScreen) {
+      final int activeSickRequests = _getActiveSickRequestCount();
+      if (activeSickRequests >= 2) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'You already have $activeSickRequests active sick leave request(s). Please wait for approval or remove an existing request.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
     await Navigator.pushNamed(context, routeName, arguments: widget.loginData);
     if (!mounted) return;
 
@@ -764,5 +781,15 @@ class _LeaveDetailScreenState extends State<LeaveDetailScreen>
     } finally {
       _isOpeningAllRequests = false;
     }
+  }
+
+  int _getActiveSickRequestCount() {
+    return _leaveRecords
+        .where(
+          (record) =>
+              record.type == 'sick_leave' &&
+              (record.status == 'pending' || record.status == 'approved'),
+        )
+        .length;
   }
 }

@@ -317,7 +317,7 @@ class AppStrings {
       'select_date_hint': 'Select Date',
       'medical_documents': 'Medical Documents',
       'attached_file': 'Attached File: ',
-      'upload_medical_cert': 'Click here to upload medical certificate',
+      'upload_medical_cert': 'Click here to take or upload medical certificate',
       'tap_to_change_file': 'Tap again to change file',
       'submit_official_request': 'Submit Official Request',
       'validation_reason_required_sickness': 'Please enter reason for sickness',
@@ -407,6 +407,8 @@ class AppStrings {
       'hours_unit': 'Hours',
       'attendance_calendar_title': 'Attendance Calendar',
       'download_report': 'Downloading report...',
+      'attendance_proof_ready': 'Attendance proof is ready',
+      'attendance_proof_failed': 'Unable to generate attendance proof',
       'day_label': 'Day',
       'avg_attendance': 'Average Attendance',
 
@@ -1328,6 +1330,8 @@ class AppStrings {
       'hours_unit': 'ម៉ោង',
       'attendance_calendar_title': 'ប្រតិទិនវត្តមាន',
       'download_report': 'កំពុងទាញយករបាយការណ៍...',
+      'attendance_proof_ready': 'ភស្តុតាងវត្តមានរួចរាល់ហើយ',
+      'attendance_proof_failed': 'មិនអាចបង្កើតភស្តុតាងវត្តមានបានទេ',
       'day_label': 'ថ្ងៃទី',
       'avg_attendance': 'មធ្យមភាគវត្តមាន',
 

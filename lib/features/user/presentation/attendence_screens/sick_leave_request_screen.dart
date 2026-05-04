@@ -1,10 +1,13 @@
-import 'package:file_picker/file_picker.dart';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_worksmart_app/core/constants/app_strings.dart';
+import 'package:flutter_worksmart_app/core/util/cloudinary/cloudinary_profile_image_service.dart';
 import 'package:flutter_worksmart_app/core/util/database/user_data.dart';
 import 'package:flutter_worksmart_app/features/user/logic/leave_request_logic.dart';
 import 'package:flutter_worksmart_app/shared/model/user_model/user_profile.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 class SickLeaveRequestScreen extends StatefulWidget {
@@ -18,6 +21,10 @@ class SickLeaveRequestScreen extends StatefulWidget {
 
 class _SickLeaveRequestScreenState extends State<SickLeaveRequestScreen> {
   static const int _sickLeaveTotal = 5;
+  final DateFormat _dateFormatter = DateFormat('dd MMM yyyy');
+  late final DateTime _selectedDate;
+  final CloudinaryProfileImageService _cloudinaryImageService =
+      CloudinaryProfileImageService();
   late int _sickLeaveUsed;
   late int _sickLeaveRemaining;
   late UserProfile _currentUser;
@@ -25,11 +32,12 @@ class _SickLeaveRequestScreenState extends State<SickLeaveRequestScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _reasonController = TextEditingController();
 
-  PlatformFile? _pickedFile;
-  DateTime? _selectedDate;
+  final ImagePicker _imagePicker = ImagePicker();
+  XFile? _pickedFile;
+  String? _attachmentUrl;
+  bool _isUploadingAttachment = false;
   bool _showValidationErrors = false;
   bool _isSubmitting = false;
-  final DateFormat _dateFormatter = DateFormat('dd MMM yyyy');
 
   bool get _hasSickLeaveQuota => _sickLeaveRemaining > 0;
 
@@ -46,44 +54,11 @@ class _SickLeaveRequestScreenState extends State<SickLeaveRequestScreen> {
     );
   }
 
-  void _showDateAlreadyRequestedSnackBar() {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          AppStrings.tr('leave_date_already_requested'),
-          style: TextStyle(color: Colors.white),
-        ),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-
-  void _showNoAvailableDatesSnackBar() {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          AppStrings.tr('leave_no_available_dates'),
-          style: TextStyle(color: Colors.white),
-        ),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-
-  bool _isDateAlreadyRequested(DateTime date) {
-    return LeaveRequestLogic.isDateRangeOverlappingExisting(
-      startDate: date,
-      endDate: date,
-      existingRecords: _currentUser.leaveRecords,
-    );
-  }
-
   @override
   void initState() {
     super.initState();
     loggedInUserId = _resolveUserId();
+    _selectedDate = DateTime.now();
     _loadData();
   }
 
@@ -118,61 +93,104 @@ class _SickLeaveRequestScreenState extends State<SickLeaveRequestScreen> {
     _sickLeaveRemaining = (_sickLeaveTotal - _sickLeaveUsed).clamp(0, 9999);
   }
 
-  Future<void> _pickFile() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['jpg', 'png', 'pdf'],
-      );
-
-      if (result != null) {
-        setState(() {
-          _pickedFile = result.files.first;
-        });
-      }
-    } catch (e) {
-      debugPrint("Error picking file: $e");
-    }
+  Future<void> _pickFileFromGallery() async {
+    await _pickImageFromSource(ImageSource.gallery);
   }
 
-  Future<void> _pickDate(BuildContext context) async {
-    if (!_hasSickLeaveQuota) {
-      _showNoQuotaSnackBar();
-      return;
-    }
+  Future<void> _pickFileFromCamera() async {
+    await _pickImageFromSource(ImageSource.camera);
+  }
 
-    final DateTime now = DateTime.now();
-    final DateTime firstDate = DateTime(now.year, now.month, now.day);
-    final DateTime lastDate = DateTime(now.year + 1, now.month, now.day);
-    final DateTime? initialDate = LeaveRequestLogic.findInitialSelectableDate(
-      preferredDate: _selectedDate ?? firstDate,
-      firstDate: firstDate,
-      lastDate: lastDate,
-      selectableDayPredicate: (date) => !_isDateAlreadyRequested(date),
-    );
+  Future<void> _pickImageFromSource(ImageSource source) async {
+    if (_isSubmitting || _isUploadingAttachment) return;
 
-    if (initialDate == null) {
-      _showNoAvailableDatesSnackBar();
-      return;
-    }
+    try {
+      final XFile? file = await _imagePicker.pickImage(
+        source: source,
+        imageQuality: 85,
+      );
 
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: initialDate,
-      firstDate: firstDate,
-      lastDate: lastDate,
-      selectableDayPredicate: (date) => !_isDateAlreadyRequested(date),
-    );
+      if (file == null) {
+        return;
+      }
 
-    if (picked != null) {
-      if (_isDateAlreadyRequested(picked)) {
-        _showDateAlreadyRequestedSnackBar();
+      if (!_isAllowedAttachmentFile(file.name)) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Only PNG and JPG images are allowed.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final String filePath = file.path.trim();
+      if (filePath.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AppStrings.tr('leave_request_submit_failed'),
+              style: TextStyle(color: Colors.white),
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final String userId = _resolveUserId().isNotEmpty
+          ? _resolveUserId()
+          : _currentUser.uid.trim();
+      if (userId.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AppStrings.tr('unable_to_resolve_user_id'),
+              style: TextStyle(color: Colors.white),
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
         return;
       }
 
       setState(() {
-        _selectedDate = picked;
+        _isUploadingAttachment = true;
       });
+
+      final String uploadedUrl = await _cloudinaryImageService
+          .uploadLeaveAttachment(
+            imageFile: File(filePath),
+            userId: userId,
+            previousImageUrl: _attachmentUrl,
+          );
+
+      if (!mounted) return;
+
+      setState(() {
+        _pickedFile = file;
+        _attachmentUrl = uploadedUrl;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${AppStrings.tr('profile_image_upload_failed')}: $e',
+            style: TextStyle(color: Colors.white),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploadingAttachment = false;
+        });
+      }
     }
   }
 
@@ -189,19 +207,10 @@ class _SickLeaveRequestScreenState extends State<SickLeaveRequestScreen> {
     });
 
     final isReasonValid = _formKey.currentState?.validate() ?? false;
-    final isDateValid = _selectedDate != null;
-    final isFileValid = _pickedFile != null;
+    final isDateValid = true;
+    final isFileValid = _attachmentUrl != null;
 
     if (!isReasonValid || !isDateValid || !isFileValid) {
-      return;
-    }
-
-    if (LeaveRequestLogic.isDateRangeOverlappingExisting(
-      startDate: _selectedDate!,
-      endDate: _selectedDate!,
-      existingRecords: _currentUser.leaveRecords,
-    )) {
-      _showDateAlreadyRequestedSnackBar();
       return;
     }
 
@@ -228,10 +237,10 @@ class _SickLeaveRequestScreenState extends State<SickLeaveRequestScreen> {
     final bool submitted = await LeaveRequestLogic.submitLeaveRequest(
       userId: userId,
       type: 'sick_leave',
-      startDate: _selectedDate!,
-      endDate: _selectedDate!,
+      startDate: _selectedDate,
+      endDate: _selectedDate,
       reason: _reasonController.text,
-      attachmentUrl: _pickedFile?.name,
+      attachmentUrl: _attachmentUrl,
     );
 
     if (!mounted) return;
@@ -272,6 +281,13 @@ class _SickLeaveRequestScreenState extends State<SickLeaveRequestScreen> {
     super.dispose();
   }
 
+  bool _isAllowedAttachmentFile(String fileName) {
+    final String normalized = fileName.trim().toLowerCase();
+    return normalized.endsWith('.png') ||
+        normalized.endsWith('.jpg') ||
+        normalized.endsWith('.jpeg');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -309,7 +325,7 @@ class _SickLeaveRequestScreenState extends State<SickLeaveRequestScreen> {
                       ),
                       const SizedBox(height: 20),
                       _buildLabel(AppStrings.tr('leave_date'), context),
-                      _buildDatePickerField(context),
+                      _buildAutoSelectedDateField(context),
                     ]),
                     const SizedBox(height: 25),
                     _buildSectionTitle(
@@ -468,87 +484,51 @@ class _SickLeaveRequestScreenState extends State<SickLeaveRequestScreen> {
     );
   }
 
-  Widget _buildDatePickerField(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final hasError = _showValidationErrors && _selectedDate == null;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: hasError
-                  ? Colors.red
-                  : Theme.of(context).dividerColor.withOpacity(0.3),
-            ),
-            borderRadius: BorderRadius.circular(12),
-            color:
-                Theme.of(context).inputDecorationTheme.fillColor ??
-                (isDark ? Colors.grey.shade800 : Colors.grey.shade50),
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () => _pickDate(context),
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 16,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          AppStrings.tr('select_leave_date'),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(
-                              context,
-                            ).textTheme.bodySmall?.color?.withOpacity(0.6),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _selectedDate != null
-                              ? _dateFormatter.format(_selectedDate!)
-                              : AppStrings.tr('tap_to_select_date'),
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: _selectedDate != null
-                                ? Theme.of(context).textTheme.bodyLarge?.color
-                                : Theme.of(context).textTheme.bodySmall?.color
-                                      ?.withOpacity(0.4),
-                          ),
-                        ),
-                      ],
-                    ),
-                    Icon(
-                      Icons.calendar_today,
-                      color: Theme.of(context).colorScheme.primary,
-                      size: 24,
-                    ),
-                  ],
+  Widget _buildAutoSelectedDateField(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).inputDecorationTheme.fillColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withOpacity(0.1),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                AppStrings.tr('leave_date'),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.color?.withOpacity(0.6),
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-            ),
+              const SizedBox(height: 4),
+              Text(
+                _dateFormatter.format(_selectedDate),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                ),
+              ),
+            ],
           ),
-        ),
-        if (hasError)
-          Padding(
-            padding: const EdgeInsets.only(top: 8, left: 12),
-            child: Text(
-              AppStrings.tr('validation_select_leave_date'),
-              style: TextStyle(color: Colors.red.shade700, fontSize: 12),
-            ),
+          Icon(
+            Icons.today_outlined,
+            color: Theme.of(context).colorScheme.primary,
+            size: 24,
           ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -570,78 +550,194 @@ class _SickLeaveRequestScreenState extends State<SickLeaveRequestScreen> {
   }
 
   Widget _buildUploadArea(BuildContext context) {
-    final hasError = _showValidationErrors && _pickedFile == null;
+    final hasError = _showValidationErrors && _attachmentUrl == null;
+    final primaryColor = Theme.of(context).colorScheme.primary;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          onTap: _pickFile,
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
+    if (_attachmentUrl != null) {
+      // Show attached file state
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Theme.of(context).cardTheme.color,
+              gradient: LinearGradient(
+                colors: [
+                  Colors.green.withOpacity(0.08),
+                  Colors.green.withOpacity(0.04),
+                ],
+              ),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: _pickedFile != null
-                    ? Colors.green
-                    : hasError
-                    ? Colors.red
-                    : Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                color: Colors.green.withOpacity(0.3),
                 width: 2,
-                style: BorderStyle.solid,
               ),
             ),
             child: Column(
               children: [
-                Icon(
-                  _pickedFile != null
-                      ? Icons.check_circle_outline
-                      : Icons.add_photo_alternate_outlined,
-                  size: 40,
-                  color: _pickedFile != null
-                      ? Colors.green
-                      : Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(height: 10),
+                const Icon(Icons.check_circle, size: 40, color: Colors.green),
+                const SizedBox(height: 12),
                 Text(
-                  _pickedFile != null
-                      ? '${AppStrings.tr('attached_file')}${_pickedFile!.name}'
-                      : AppStrings.tr('upload_medical_cert'),
+                  _pickedFile?.name ?? 'Document',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: _pickedFile != null
-                        ? Colors.green
-                        : Theme.of(context).colorScheme.primary,
-                    fontSize: 13,
-                    fontWeight: _pickedFile != null
-                        ? FontWeight.bold
-                        : FontWeight.normal,
+                  style: const TextStyle(
+                    color: Colors.green,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 16),
+                if (_isUploadingAttachment)
+                  const SizedBox(
+                    height: 40,
+                    width: 40,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(Colors.green),
+                    ),
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildCardButton(
+                          context,
+                          Icons.camera_alt_outlined,
+                          'Camera',
+                          primaryColor,
+                          _pickFileFromCamera,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildCardButton(
+                          context,
+                          Icons.image_outlined,
+                          'Gallery',
+                          primaryColor,
+                          _pickFileFromGallery,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ).animate().scale(delay: 400.ms),
+        ],
+      );
+    }
+
+    // Show upload prompt with 2 cards
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_isUploadingAttachment)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardTheme.color,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          )
+        else
+          Row(
+            children: [
+              Expanded(
+                child: _buildCardButton(
+                  context,
+                  Icons.image_outlined,
+                  'Gallery',
+                  primaryColor,
+                  _pickFileFromGallery,
+                  isError: hasError,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildCardButton(
+                  context,
+                  Icons.camera_alt_outlined,
+                  'Camera',
+                  primaryColor,
+                  _pickFileFromCamera,
+                  isError: hasError,
+                ),
+              ),
+            ],
+          ).animate().scale(delay: 300.ms),
+        if (hasError)
+          Padding(
+            padding: const EdgeInsets.only(top: 12, left: 4),
+            child: Row(
+              children: [
+                Icon(Icons.error_outline, size: 16, color: Colors.red.shade700),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    AppStrings.tr('validation_upload_medical_document'),
+                    style: TextStyle(color: Colors.red.shade700, fontSize: 12),
                   ),
                 ),
-                if (_pickedFile != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    AppStrings.tr('tap_to_change_file'),
-                    style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
-                  ),
-                ],
               ],
             ),
           ),
-        ),
-        if (hasError)
-          Padding(
-            padding: const EdgeInsets.only(top: 8, left: 12),
-            child: Text(
-              AppStrings.tr('validation_upload_medical_document'),
-              style: TextStyle(color: Colors.red.shade700, fontSize: 12),
-            ),
-          ),
       ],
-    ).animate().scale(delay: 400.ms);
+    );
+  }
+
+  Widget _buildCardButton(
+    BuildContext context,
+    IconData icon,
+    String label,
+    Color color,
+    VoidCallback onPressed, {
+    bool isError = false,
+  }) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardTheme.color,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isError
+                ? Colors.red.withOpacity(0.4)
+                : color.withOpacity(0.15),
+            width: 2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: isError
+                  ? Colors.red.withOpacity(0.05)
+                  : color.withOpacity(0.05),
+              blurRadius: 12,
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 40, color: color),
+            const SizedBox(height: 12),
+            Text(
+              label,
+              style: TextStyle(
+                color: Theme.of(context).textTheme.bodyLarge?.color,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildSubmitButton(BuildContext context) {
@@ -659,7 +755,8 @@ class _SickLeaveRequestScreenState extends State<SickLeaveRequestScreen> {
         ],
       ),
       child: ElevatedButton(
-        onPressed: (_isSubmitting || !_hasSickLeaveQuota)
+        onPressed:
+            (_isSubmitting || _isUploadingAttachment || !_hasSickLeaveQuota)
             ? null
             : _submitRequest,
         style: ElevatedButton.styleFrom(

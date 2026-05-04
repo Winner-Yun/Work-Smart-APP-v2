@@ -5,6 +5,7 @@ import 'package:flutter_worksmart_app/core/constants/app_img.dart';
 import 'package:flutter_worksmart_app/core/constants/app_strings.dart';
 import 'package:flutter_worksmart_app/core/constants/appcolor.dart';
 import 'package:flutter_worksmart_app/features/user/logic/attendance_stats_logic.dart';
+import 'package:flutter_worksmart_app/shared/widget/common/attendance_stats_skeleton_loading.dart';
 import 'package:flutter_worksmart_app/shared/widget/user/data_empty_state.dart';
 
 class AttendanceStatsScreen extends StatefulWidget {
@@ -24,11 +25,7 @@ class _AttendanceStatsScreenState extends AttendanceStatsLogic {
       return Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: _buildAppBar(),
-        body: Center(
-          child: CircularProgressIndicator(
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
+        body: const AttendanceStatsSkeletonLoading(),
       );
     }
 

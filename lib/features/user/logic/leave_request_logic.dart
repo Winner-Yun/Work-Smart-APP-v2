@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_worksmart_app/core/constants/app_strings.dart';
+import 'package:flutter_worksmart_app/core/util/cloudinary/cloudinary_profile_image_service.dart';
 import 'package:flutter_worksmart_app/core/util/database/realtime_data_controller.dart';
 import 'package:flutter_worksmart_app/shared/model/activity_models/leave_record.dart';
 import 'package:intl/intl.dart';
@@ -25,6 +26,8 @@ class LeaveRemoveModeState {
 class LeaveRequestLogic {
   static final RealtimeDataController _dataController =
       RealtimeDataController();
+  static final CloudinaryProfileImageService _cloudinaryImageService =
+      CloudinaryProfileImageService();
 
   static bool isApprovedStatus(String status) {
     if (status == 'approved') return true;
@@ -176,10 +179,23 @@ class LeaveRequestLogic {
     final bool shouldDelete = await confirmRemoveRequest(context);
     if (!shouldDelete) return false;
 
-    final bool removed = await removeLeaveRequest(
-      requestId: record.requestId,
-      userId: userId,
-    );
+    if (!context.mounted) return false;
+
+    _showDeleteLoadingDialog(context);
+
+    bool removed = false;
+    try {
+      removed = await removeLeaveRequest(
+        requestId: record.requestId,
+        userId: userId,
+      );
+    } finally {
+      if (context.mounted &&
+          Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+
     if (!removed) return false;
 
     if (!context.mounted) return true;
@@ -617,6 +633,12 @@ class LeaveRequestLogic {
       return false;
     }
 
+    if (target != null) {
+      await _cloudinaryImageService.deleteLeaveAttachmentByUrl(
+        target['attachment_url']?.toString(),
+      );
+    }
+
     final int beforeCount = leaveRecords.length;
     leaveRecords.removeWhere(
       (item) => item['request_id']?.toString() == requestId,
@@ -634,6 +656,41 @@ class LeaveRequestLogic {
     } catch (_) {
       return false;
     }
+  }
+
+  static void _showDeleteLoadingDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (dialogContext) {
+        return const PopScope(
+          canPop: false,
+          child: Dialog(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: Center(
+              child: SizedBox(
+                width: 110,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        height: 28,
+                        width: 28,
+                        child: CircularProgressIndicator(strokeWidth: 2.5),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   static int _findUserIndex({String? uid, String? requestId}) {

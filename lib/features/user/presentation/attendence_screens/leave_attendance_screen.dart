@@ -10,6 +10,7 @@ import 'package:flutter_worksmart_app/features/user/presentation/attendence_scre
 import 'package:flutter_worksmart_app/features/user/presentation/attendence_screens/leave_detail_view_screen.dart';
 import 'package:flutter_worksmart_app/shared/model/activity_models/leave_record.dart';
 import 'package:flutter_worksmart_app/shared/model/user_model/user_profile.dart';
+import 'package:flutter_worksmart_app/shared/widget/common/leave_attendance_skeleton_loading.dart';
 import 'package:flutter_worksmart_app/shared/widget/user/data_empty_state.dart';
 import 'package:intl/intl.dart';
 
@@ -157,6 +158,21 @@ class _LeaveAttendanceScreenState extends State<LeaveAttendanceScreen> {
   }
 
   Future<void> _openLeaveRequest(String routeName) async {
+    // Check if requesting sick leave
+    if (routeName == AppRoute.sickleaveScreen) {
+      final activeSickRequests = _leaveRecords
+          .where(
+            (record) =>
+                record.type == 'sick_leave' &&
+                (record.status == 'pending' || record.status == 'approved'),
+          )
+          .length;
+
+      if (activeSickRequests >= 1) {
+        return;
+      }
+    }
+
     await Navigator.pushNamed(context, routeName, arguments: loginData);
     if (!mounted) return;
 
@@ -232,7 +248,7 @@ class _LeaveAttendanceScreenState extends State<LeaveAttendanceScreen> {
           // SCROLLABLE LIST SECTION
           Expanded(
             child: _isLoading
-                ? _buildLoadingState(context)
+                ? const LeaveAttendanceSkeletonLoading()
                 : _history.isEmpty
                 ? _buildEmptyState(context)
                 : ListView.builder(
@@ -421,18 +437,17 @@ class _LeaveAttendanceScreenState extends State<LeaveAttendanceScreen> {
     );
   }
 
-  Widget _buildLoadingState(BuildContext context) {
-    return Center(
-      child: CircularProgressIndicator(
-        valueColor: AlwaysStoppedAnimation<Color>(
-          Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
-  }
-
   // --- 4. Fixed Bottom Action ---
   Widget _buildBottomAction(BuildContext context) {
+    final activeSickRequests = _leaveRecords
+        .where(
+          (record) =>
+              record.type == 'sick_leave' &&
+              (record.status == 'pending' || record.status == 'approved'),
+        )
+        .length;
+    final canRequestSick = activeSickRequests < 1;
+
     return Container(
           padding: const EdgeInsets.fromLTRB(20, 15, 20, 35),
           decoration: BoxDecoration(
@@ -450,11 +465,15 @@ class _LeaveAttendanceScreenState extends State<LeaveAttendanceScreen> {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () => _openLeaveRequest(AppRoute.sickleaveScreen),
+                  onPressed: canRequestSick
+                      ? () => _openLeaveRequest(AppRoute.sickleaveScreen)
+                      : null,
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(0, 55),
                     side: BorderSide(
-                      color: Theme.of(context).colorScheme.primary,
+                      color: canRequestSick
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.grey.withOpacity(0.3),
                     ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(15),
@@ -462,10 +481,12 @@ class _LeaveAttendanceScreenState extends State<LeaveAttendanceScreen> {
                   ),
                   child: Text(
                     AppStrings.tr('request_sick_leave'),
-                    maxLines: 1, // Fix: Prevent text wrapping
-                    overflow: TextOverflow.ellipsis, // Fix: Handle overflow
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.primary,
+                      color: canRequestSick
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.grey,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -486,8 +507,8 @@ class _LeaveAttendanceScreenState extends State<LeaveAttendanceScreen> {
                   ),
                   child: Text(
                     AppStrings.tr('request_annual_leave'),
-                    maxLines: 1, // Fix: Prevent text wrapping
-                    overflow: TextOverflow.ellipsis, // Fix: Handle overflow
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,

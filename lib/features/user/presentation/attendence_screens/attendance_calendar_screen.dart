@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_worksmart_app/core/constants/app_strings.dart';
@@ -7,6 +10,10 @@ import 'package:flutter_worksmart_app/core/util/database/user_data.dart';
 import 'package:flutter_worksmart_app/shared/model/activity_models/attendance_record.dart';
 import 'package:flutter_worksmart_app/shared/model/user_model/user_profile.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:share_plus/share_plus.dart';
 
 class AttendanceCalendarScreen extends StatefulWidget {
   final Map<String, dynamic>? loginData;
@@ -20,12 +27,13 @@ class AttendanceCalendarScreen extends StatefulWidget {
 
 class _AttendanceCalendarScreenState extends State<AttendanceCalendarScreen> {
   late UserProfile _currentUser;
-  late List<AttendanceRecord> _userAttendanceRecords = [];
+  List<AttendanceRecord> _userAttendanceRecords = [];
   late String? loggedInUserId;
 
   late int _selectedDay;
   late DateTime _currentViewDate;
-  final bool _isLoading = false;
+  bool _isLoading = true;
+  bool _isDownloading = false;
   final RealtimeDataController _realtimeDataController =
       RealtimeDataController();
 
@@ -49,27 +57,300 @@ class _AttendanceCalendarScreenState extends State<AttendanceCalendarScreen> {
   }
 
   Future<void> _loadData() async {
-    final users = await _realtimeDataController.fetchUserRecords();
-    final attendanceRecords = await _realtimeDataController
-        .fetchAttendanceRecords();
+    try {
+      final users = await _realtimeDataController.fetchUserRecords();
+      final attendanceRecords = await _realtimeDataController
+          .fetchAttendanceRecords();
 
-    final currentUserData = users.firstWhere(
-      (user) =>
-          (user['uid'] ?? user['user_id'] ?? user['userId'])
-              ?.toString()
-              .trim() ==
-          loggedInUserId,
-      orElse: () => defaultUserRecord,
+      final currentUserData = users.firstWhere(
+        (user) =>
+            (user['uid'] ?? user['user_id'] ?? user['userId'])
+                ?.toString()
+                .trim() ==
+            loggedInUserId,
+        orElse: () => defaultUserRecord,
+      );
+
+      _currentUser = UserProfile.fromJson(currentUserData);
+
+      _userAttendanceRecords = attendanceRecords
+          .where((record) => record['uid'] == _currentUser.uid)
+          .map((json) => AttendanceRecord.fromJson(json))
+          .toList();
+
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${AppStrings.tr('attendance_proof_failed')}: $error'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _downloadAttendanceProof() async {
+    if (_isLoading || _isDownloading) {
+      return;
+    }
+
+    setState(() {
+      _isDownloading = true;
+    });
+
+    try {
+      final monthLabel = _getLocalizedMonthYear(_currentViewDate);
+      final monthRecords = _userAttendanceRecords.where((record) {
+        final recordDate = DateTime.parse(record.date);
+        return recordDate.year == _currentViewDate.year &&
+            recordDate.month == _currentViewDate.month;
+      }).toList()..sort((a, b) => a.date.compareTo(b.date));
+
+      final selectedDayData = _getDayData(_selectedDay);
+      final presentCount = monthRecords
+          .where((record) => record.status == 'on_time')
+          .length;
+      final lateCount = monthRecords
+          .where((record) => record.status == 'late')
+          .length;
+      final absentCount = monthRecords
+          .where((record) => record.status == 'absent')
+          .length;
+      final generatedAt = DateFormat(
+        'dd MMM yyyy, HH:mm',
+      ).format(DateTime.now());
+
+      final pdf = pw.Document();
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(24),
+          build: (context) {
+            return [
+              pw.Text(
+                'Attendance Proof',
+                style: pw.TextStyle(
+                  fontSize: 22,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(height: 6),
+              pw.Text('Generated at: $generatedAt'),
+              pw.SizedBox(height: 18),
+              pw.Container(
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.grey300),
+                  borderRadius: pw.BorderRadius.circular(10),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      'Employee Details',
+                      style: pw.TextStyle(
+                        fontSize: 14,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.SizedBox(height: 8),
+                    pw.Text('User ID: ${_currentUser.uid}'),
+                    pw.Text(
+                      'Name: ${_currentUser.displayName.isNotEmpty ? _currentUser.displayName : '-'}',
+                    ),
+                    pw.Text(
+                      'Role: ${_currentUser.roleTitle.isNotEmpty ? _currentUser.roleTitle : '-'}',
+                    ),
+                    pw.Text('Month: $monthLabel'),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 16),
+              pw.Row(
+                children: [
+                  _buildPdfSummaryCard(
+                    'Present',
+                    presentCount.toString(),
+                    PdfColors.green,
+                  ),
+                  pw.SizedBox(width: 8),
+                  _buildPdfSummaryCard(
+                    'Late',
+                    lateCount.toString(),
+                    PdfColors.orange,
+                  ),
+                  pw.SizedBox(width: 8),
+                  _buildPdfSummaryCard(
+                    'Absent',
+                    absentCount.toString(),
+                    PdfColors.red,
+                  ),
+                  pw.SizedBox(width: 8),
+                  _buildPdfSummaryCard(
+                    'Attendance',
+                    '${_getMonthAttendanceRate(_currentViewDate)}%',
+                    PdfColors.blue,
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 16),
+              pw.Container(
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.grey300),
+                  borderRadius: pw.BorderRadius.circular(10),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      'Selected Day',
+                      style: pw.TextStyle(
+                        fontSize: 14,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.SizedBox(height: 8),
+                    pw.Text(
+                      'Date: ${DateFormat('dd MMM yyyy').format(DateTime(_currentViewDate.year, _currentViewDate.month, _selectedDay))}',
+                    ),
+                    pw.Text('Check In: ${selectedDayData['in']}'),
+                    pw.Text('Check Out: ${selectedDayData['out']}'),
+                    pw.Text('Total Hours: ${selectedDayData['h']}'),
+                    pw.Text(
+                      'Status: ${_formatProofStatus(selectedDayData['s'] as String)}',
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 16),
+              pw.Text(
+                'Monthly Records',
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(height: 8),
+              pw.TableHelper.fromTextArray(
+                headers: const [
+                  'Date',
+                  'Check In',
+                  'Check Out',
+                  'Hours',
+                  'Status',
+                ],
+                data: monthRecords.isEmpty
+                    ? [
+                        ['No records found', '-', '-', '-', '-'],
+                      ]
+                    : monthRecords
+                          .map(
+                            (record) => [
+                              record.date,
+                              record.checkIn,
+                              record.checkOut,
+                              record.totalHours.toStringAsFixed(1),
+                              _formatProofStatus(record.status),
+                            ],
+                          )
+                          .toList(),
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                cellStyle: const pw.TextStyle(fontSize: 10),
+                cellAlignment: pw.Alignment.centerLeft,
+                headerDecoration: const pw.BoxDecoration(
+                  color: PdfColors.grey200,
+                ),
+                border: pw.TableBorder.all(color: PdfColors.grey300),
+                columnWidths: {
+                  0: const pw.FlexColumnWidth(1.4),
+                  1: const pw.FlexColumnWidth(1),
+                  2: const pw.FlexColumnWidth(1),
+                  3: const pw.FlexColumnWidth(0.8),
+                  4: const pw.FlexColumnWidth(1),
+                },
+              ),
+            ];
+          },
+        ),
+      );
+
+      final Uint8List bytes = await pdf.save();
+      final fileName =
+          'attendance_proof_${_currentUser.uid}_${DateFormat('yyyy_MM').format(_currentViewDate)}.pdf';
+
+      // Save to temporary directory
+      final tempDir = await getTemporaryDirectory();
+      final file = await File('${tempDir.path}/$fileName').writeAsBytes(bytes);
+
+      // Share the file
+      await Share.shareXFiles([XFile(file.path)], subject: 'Attendance Proof');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppStrings.tr('attendance_proof_ready'))),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${AppStrings.tr('attendance_proof_failed')}: $error'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+        });
+      }
+    }
+  }
+
+  pw.Widget _buildPdfSummaryCard(String label, String value, PdfColor color) {
+    return pw.Expanded(
+      child: pw.Container(
+        padding: const pw.EdgeInsets.all(10),
+        decoration: pw.BoxDecoration(
+          color: PdfColors.grey100,
+          borderRadius: pw.BorderRadius.circular(8),
+          border: pw.Border.all(color: color),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(label, style: pw.TextStyle(fontSize: 10, color: color)),
+            pw.SizedBox(height: 6),
+            pw.Text(
+              value,
+              style: pw.TextStyle(
+                fontSize: 16,
+                fontWeight: pw.FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
+  }
 
-    _currentUser = UserProfile.fromJson(currentUserData);
-
-    _userAttendanceRecords = attendanceRecords
-        .where((record) => record['uid'] == _currentUser.uid)
-        .map((json) => AttendanceRecord.fromJson(json))
-        .toList();
-
-    setState(() {}); 
+  String _formatProofStatus(String status) {
+    switch (status) {
+      case 'on_time':
+        return 'On Time';
+      case 'late':
+        return 'Late';
+      case 'absent':
+        return 'Absent';
+      default:
+        return status;
+    }
   }
 
   String _getLocalizedMonthYear(DateTime date) {
@@ -181,14 +462,7 @@ class _AttendanceCalendarScreenState extends State<AttendanceCalendarScreen> {
             Icons.file_download_outlined,
             color: Theme.of(context).colorScheme.primary,
           ),
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(AppStrings.tr('download_report')),
-                backgroundColor: Theme.of(context).colorScheme.primary,
-              ),
-            );
-          },
+          onPressed: _downloadAttendanceProof,
         ),
       ],
     );

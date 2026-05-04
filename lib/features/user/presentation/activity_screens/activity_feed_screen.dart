@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_worksmart_app/core/constants/app_strings.dart';
 import 'package:flutter_worksmart_app/features/user/logic/activity_feed_logic.dart';
 import 'package:flutter_worksmart_app/features/user/presentation/activity_screens/activity_detail_screen.dart';
+import 'package:flutter_worksmart_app/shared/widget/common/activity_feed_skeleton_loading.dart';
 
 PreferredSizeWidget buildActivityAppBar(
   BuildContext context, {
@@ -53,7 +54,7 @@ class _ActivityFeedScreenState extends ActivityFeedLogic {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const ActivityFeedSkeletonLoading();
     }
 
     return Column(
